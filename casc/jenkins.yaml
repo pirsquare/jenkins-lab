@@ -1,0 +1,17 @@
+jenkins:
+  systemMessage: "Managed by JCasC"
+  numExecutors: 0
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "admin"
+          password: "change-me"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything: {}
+unclassified:
+  location:
+    url: "http://localhost:8080/"
+jobs:
+  - script: |
+      folder('example')
