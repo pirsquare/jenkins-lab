@@ -51,3 +51,8 @@ jenkins_home/
 *.gz
 *.tgz
 *.7z
+
+# Sample Python app
+sample-app/__pycache__/
+sample-app/venv/
+sample-app/*.pyc

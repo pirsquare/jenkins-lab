@@ -14,51 +14,41 @@ Reference notes and starter commands to spin up Jenkins quickly across common ta
 - Java 17+ (Temurin or OpenJDK). AlmaLinux steps below install OpenJDK 17.
 - Storage: persistent volume for /var/jenkins_home (or host bind for Docker).
 
-## Docker (quickest)
-```sh
-docker pull jenkins/jenkins:lts
-docker run -d \
-  --name jenkins \
-  -p 8080:8080 -p 50000:50000 \
-  -v jenkins_home:/var/jenkins_home \
-  jenkins/jenkins:lts
-```
-View admin password: `docker exec -it jenkins cat /var/jenkins_home/secrets/initialAdminPassword`
+## Quick Start
 
-## Linux VM (AlmaLinux)
+### Docker (Fastest)
 ```sh
-sudo dnf -y update
-sudo dnf -y install java-17-openjdk wget curl ca-certificates
-sudo rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
-sudo tee /etc/yum.repos.d/jenkins.repo >/dev/null <<'EOF'
-[jenkins]
-name=Jenkins-stable
-baseurl=https://pkg.jenkins.io/redhat-stable
-gpgcheck=1
-gpgkey=https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
-enabled=1
-EOF
-sudo dnf -y install jenkins
-sudo systemctl enable --now jenkins
+docker run -d -p 8080:8080 -p 50000:50000 -v jenkins_home:/var/jenkins_home jenkins/jenkins:lts
 ```
-- Admin password: `sudo cat /var/lib/jenkins/secrets/initialAdminPassword`
-- Default port 8080; if firewalld is enabled: `sudo firewall-cmd --permanent --add-port=8080/tcp && sudo firewall-cmd --reload`
+Get admin password: `docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword`
 
-## Kubernetes (Helm)
-```sh
-helm repo add jenkins https://charts.jenkins.io
-helm repo update
-helm install jenkins jenkins/jenkins \
-  --namespace jenkins --create-namespace \
-  --set controller.serviceType=LoadBalancer
-```
-- Get admin password: `kubectl exec -n jenkins -it deploy/jenkins -- cat /var/jenkins_home/secrets/initialAdminPassword`
-- For ingress: set `controller.ingress.enabled=true` and provide host/path annotations.
+**→ See [JENKINS.md](JENKINS.md) for complete installation and configuration instructions**
 
-## Cloud VM Notes
-- AWS EC2: Use a security group allowing 22 and 8080/443; attach an EBS volume for /var/lib/jenkins if you want data durability beyond root disk. Consider an ALB/NLB terminating TLS.
-- Azure VM: NSG rules for 22 and 8080/443; add a data disk and mount to /var/lib/jenkins; optionally front with Application Gateway for TLS.
-- GCP Compute Engine: VPC firewall for 22 and 8080/443; optional persistent disk for /var/lib/jenkins; HTTPS Load Balancer if exposing publicly.
+### AlmaLinux VM
+See [JENKINS.md](JENKINS.md#almalinux-vm) for package installation steps.
+
+### Kubernetes (Helm)
+See [JENKINS.md](JENKINS.md#kubernetes-helm) for Helm chart installation.
+
+## Architecture
+
+**AWS:**
+- VPC with public subnets across 2 AZs
+- Security group allowing SSH/HTTP/HTTPS and optional direct 8080
+- Nginx reverse proxy on the instance for HTTP/HTTPS
+- EBS encrypted root volume
+
+**Azure:**
+- VNet with VM subnet
+- Network Security Group allowing SSH/HTTP/HTTPS and 8080
+- Nginx reverse proxy on the VM for HTTP/HTTPS
+- Premium SSD storage
+
+**GCP:**
+- VPC with regional subnet
+- Firewall allowing SSH/HTTP/HTTPS and 8080
+- Nginx reverse proxy on the instance for HTTP/HTTPS
+- SSD persistent disks
 
 ## Post-Install Basics
 - Complete the web wizard, install recommended plugins, and create the admin user.
@@ -71,53 +61,84 @@ helm install jenkins jenkins/jenkins \
 - Enable periodic backups of the Jenkins home directory and any external secrets.
 
 ## Infrastructure as Code (Terraform)
-Starter configs live under terraform/ and point to the reusable cloud-init script at terraform/cloud-init/jenkins-almalinux.sh.
 
-- AWS: terraform/aws/main.tf
-- Azure: terraform/azure/main.tf
-- GCP: terraform/gcp/main.tf
+Complete infrastructure provisioning including VPC, networking, security groups, and Nginx reverse proxy.
 
-Update variables (region, project, key paths, instance size) before `terraform init && terraform apply`.
+### What's Included
+
+- **Networking:** VPC, subnets, route tables, internet gateways
+- **Security:** Network security groups, firewall rules with HTTP/HTTPS access
+- **Reverse Proxy:** Nginx auto-configured for Jenkins with TLS support
+- **Compute:** AlmaLinux VMs with Jenkins and Nginx auto-installed
+- **Monitoring:** Instance monitoring and health checks
+
+### Quick Start
+
+**AWS:**
+```sh
+cd terraform/aws
+terraform init
+terraform apply
+```
+
+**Azure:**
+```sh
+cd terraform/azure
+terraform apply -var="ssh_public_key=~/.ssh/id_rsa.pub"
+```
+
+**GCP:**
+```sh
+cd terraform/gcp
+terraform apply -var="project=your-gcp-project-id"
+```
+
+### Outputs
+
+Each Terraform configuration provides:
+- Public IPs
+- HTTP/HTTPS URLs (via Nginx reverse proxy)
+- Direct access URLs (port 8080)
+- SSH commands
+- Next steps for TLS configuration
+
+Run `terraform output` to view all outputs after provisioning.
 
 ## Jenkins Configuration as Code (JCasC)
-See casc/jenkins.yaml for a JCasC starter that seeds an admin user and an example folder.
-Run with Docker: `docker run -d -p 8080:8080 -v $PWD/casc:/var/jenkins_home/casc jenkins/jenkins:lts-jdk17 --argumentsRealm.passwd.admin=change-me --argumentsRealm.roles.admin=admin --config /var/jenkins_home/casc/jenkins.yaml`
 
-## Reverse Proxy + TLS (Nginx)
-Terminate TLS on port 443 and proxy to Jenkins on 8080.
-```nginx
-server {
-    listen 80;
-    server_name jenkins.example.com;
-    return 301 https://$host$request_uri;
-}
+Example configuration in `casc/jenkins.yaml` seeds admin user and folder structure.
 
-server {
-    listen 443 ssl;
-    server_name jenkins.example.com;
-    ssl_certificate     /etc/letsencrypt/live/jenkins.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/jenkins.example.com/privkey.pem;
+**→ See [JENKINS.md](JENKINS.md#configuration-as-code-jcasc) for JCasC setup and usage**
 
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-}
-```
-Test locally with `curl -I https://jenkins.example.com` and ensure Jenkins Manage Jenkins -> Configure System -> Jenkins URL matches the HTTPS URL.
+## Reverse Proxy & TLS
+
+Nginx is automatically configured as a reverse proxy when using Terraform. For HTTPS/TLS:
+
+**→ See [JENKINS.md](JENKINS.md#reverse-proxy--tls) for TLS certificate setup with Let's Encrypt**
 
 ## Backups and Restore
-- What to back up: /var/jenkins_home (jobs, plugins, secrets, credentials). For Docker, back up the named volume; for Kubernetes, back up the PVC.
-- Simple nightly backup (controller):
-  ```sh
-  sudo tar czf /var/backups/jenkins-home-$(date +%F).tgz /var/jenkins_home
-  find /var/backups -name "jenkins-home-*.tgz" -mtime +7 -delete
-  ```
-- Offsite: sync to cloud storage (S3/Blob/GS) via `aws s3 sync /var/backups s3://your-bucket/jenkins/` (or provider equivalent).
-- Restore: stop Jenkins, restore the archive to /var/jenkins_home, ensure ownership jenkins:jenkins, then start Jenkins. For containers, mount the restored directory/volume and restart.
 
-## Contributing
-Future improvements: provider-specific Terraform/Terragrunt samples, JCasC examples, and hardened reverse-proxy configs (Nginx/Traefik/Caddy).
+Critical to back up `/var/lib/jenkins` (jobs, configs, credentials, build history).
+
+**→ See [JENKINS.md](JENKINS.md#backups-and-restore) for automated backup scripts and restore procedures**
+
+## Python App CI/CD Example
+
+Includes a complete Flask application with automated Jenkins pipeline:
+- **Sample App:** `sample-app/` - Flask + Gunicorn with `/` and `/health` endpoints
+- **Pipeline:** `Jenkinsfile` - automated test, build, and deploy
+- **Scripts:** `scripts/` - deployment automation and systemd service
+
+**Quick Deploy:**
+```sh
+# Setup target server
+cd scripts && sudo ./setup-deploy-target.sh
+
+# Manual deploy (or use Jenkins pipeline)
+./deploy.sh <target-host> jenkins
+```
+
+**→ See [JENKINS.md](JENKINS.md#python-app-cicd-pipeline) for complete CI/CD setup guide**
+
+## Future Improvements
+Multi-stage Docker builds, Kubernetes manifests, Helm charts for the Python app, and monitoring integration (Prometheus/Grafana).
