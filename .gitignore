@@ -1,0 +1,53 @@
+# OS / editors
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Python / build caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Node / web builds
+node_modules/
+dist/
+build/
+
+# Logs and temp
+*.log
+*.tmp
+*.bak
+*.cache
+
+# Credentials / secrets / keys
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
+*.jks
+*.kdb
+*.keystore
+.env
+.env.*
+
+# Terraform / cloud state
+.terraform/
+*.tfstate
+*.tfstate.backup
+crash.log
+
+# Jenkins artifacts
+secrets/initialAdminPassword
+jenkins_home/
+
+# Archives
+*.zip
+*.tar
+*.gz
+*.tgz
+*.7z
